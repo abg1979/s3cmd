@@ -1,8 +1,10 @@
 *.pyc
 *.swp
 testsuite
+testsuite-out
 /MANIFEST
 /dist
 build/*
 .idea
 *.iml
+s3cmd.spec
