@@ -1,4 +1,4 @@
-#!/usr/bin/env python
+#!/usr/bin/env python2
 # -*- coding=utf-8 -*-
 
 ## Amazon S3cmd - testsuite
@@ -10,6 +10,7 @@
 import sys
 import os
 import re
+import time
 from subprocess import Popen, PIPE, STDOUT
 import locale
 import getpass
@@ -26,6 +27,7 @@ run_tests = []
 exclude_tests = []
 
 verbose = False
+configfile = None
 
 if os.name == "posix":
     have_wget = True
@@ -87,7 +89,7 @@ if not os.path.isdir('testsuite/crappy-file-name'):
     # TODO: also unpack if the tarball is newer than the directory timestamp
     #       for instance when a new version was pulled from SVN.
 
-def test(label, cmd_args = [], retcode = 0, must_find = [], must_not_find = [], must_find_re = [], must_not_find_re = []):
+def test(label, cmd_args = [], retcode = 0, must_find = [], must_not_find = [], must_find_re = [], must_not_find_re = [], stdin = None):
     def command_output():
         print "----"
         print " ".join([" " in arg and "'%s'" % arg or arg for arg in cmd_args])
@@ -137,7 +139,7 @@ def test(label, cmd_args = [], retcode = 0, must_find = [], must_not_find = [], 
     if not cmd_args:
         return skip()
 
-    p = Popen(cmd_args, stdout = PIPE, stderr = STDOUT, universal_newlines = True)
+    p = Popen(cmd_args, stdin = stdin, stdout = PIPE, stderr = STDOUT, universal_newlines = True, close_fds = True)
     stdout, stderr = p.communicate()
     if type(retcode) not in [list, tuple]: retcode = [retcode]
     if p.returncode not in retcode:
@@ -175,8 +177,11 @@ def test(label, cmd_args = [], retcode = 0, must_find = [], must_not_find = [], 
 
 def test_s3cmd(label, cmd_args = [], **kwargs):
     if not cmd_args[0].endswith("s3cmd"):
-        cmd_args.insert(0, "python")
+        cmd_args.insert(0, "python2")
         cmd_args.insert(1, "s3cmd")
+        if configfile:
+            cmd_args.insert(2, "-c")
+            cmd_args.insert(3, configfile)
 
     return test(label, cmd_args, **kwargs)
 
@@ -237,6 +242,10 @@ while argv:
         print "%s A B K..O -N" % sys.argv[0]
         print "Run tests number A, B and K through to O, except for N"
         sys.exit(0)
+
+    if arg in ("-c", "--config"):
+        configfile = argv.pop(0)
+        continue
     if arg in ("-l", "--list"):
         exclude_tests = range(0, 999)
         break
@@ -341,6 +350,28 @@ test_s3cmd("List bucket recursive", ['ls', '--recursive', pbucket(1)],
 ## ====== Clean up local destination dir
 test_flushdir("Clean testsuite-out/", "testsuite-out")
 
+## ====== Put from stdin
+f = open('testsuite/single-file/single-file.txt', 'r')
+test_s3cmd("Put from stdin", ['put', '-', '%s/single-file/single-file.txt' % pbucket(1)],
+           must_find = ["File '-' stored as '%s/single-file/single-file.txt'" % pbucket(1)],
+           stdin = f)
+f.close()
+
+## ====== Multipart put
+os.system('dd if=/dev/urandom of=testsuite-out/urandom.bin bs=1M count=16 > /dev/null 2>&1')
+test_s3cmd("Put multipart", ['put', '--multipart-chunk-size-mb=5', 'testsuite-out/urandom.bin', '%s/urandom.bin' % pbucket(1)],
+           must_not_find = ['abortmp'])
+
+## ====== Multipart put from stdin
+f = open('testsuite-out/urandom.bin', 'r')
+test_s3cmd("Multipart large put from stdin", ['put', '--multipart-chunk-size-mb=5', '-', '%s/urandom2.bin' % pbucket(1)],
+           must_find = ['%s/urandom2.bin' % pbucket(1)],
+           must_not_find = ['abortmp'],
+           stdin = f)
+f.close()
+
+## ====== Clean up local destination dir
+test_flushdir("Clean testsuite-out/", "testsuite-out")
 
 ## ====== Sync from S3
 must_find = [ "File '%s/xyz/binary/random-crap.md5' stored as 'testsuite-out/xyz/binary/random-crap.md5'" % pbucket(1) ]
@@ -508,7 +539,7 @@ test_s3cmd("Verify ACL and MIME type", ['info', '%s/copy/etc2/Logo.PNG' % pbucke
                      "ACL:.*\*anon\*: READ",
                      "URL:.*http://%s.%s/copy/etc2/Logo.PNG" % (bucket(2), cfg.host_base) ])
 
-test_s3cmd("Add cache-control header", ['modify', '--add-header=cache-control: max-age=3600', '%s/copy/etc2/Logo.PNG' % pbucket(2) ],
+test_s3cmd("Add cache-control header", ['modify', '--add-header=cache-control: max-age=3600, public', '%s/copy/etc2/Logo.PNG' % pbucket(2) ],
     must_find_re = [ "File .* modified" ])
 
 if have_wget:
@@ -522,6 +553,10 @@ if have_wget:
     test_wget_HEAD("HEAD check Cache-Control not present", 'http://%s.%s/copy/etc2/Logo.PNG' % (bucket(2), cfg.host_base),
                    must_not_find_re = [ "Cache-Control: max-age=3600" ])
 
+## ====== sign
+test_s3cmd("sign string", ['sign', 's3cmd'], must_find_re = ["Signature:"])
+test_s3cmd("signurl time", ['signurl', '%s/copy/etc2/Logo.PNG' % pbucket(2), str(int(time.time()) + 60)], must_find_re = ["http://"])
+test_s3cmd("signurl time offset", ['signurl', '%s/copy/etc2/Logo.PNG' % pbucket(2), '+60'], must_find_re = ["https?://"])
 
 ## ====== Rename within S3
 test_s3cmd("Rename within S3", ['mv', '%s/copy/etc2/Logo.PNG' % pbucket(2), '%s/copy/etc/logo.png' % pbucket(2)],
@@ -567,6 +602,10 @@ test_s3cmd("Verify move", ['ls', '-r', pbucket(2)],
     must_not_find = [ "%s/copy/blahBlah/Blah.txt" % pbucket(2),
                       "%s/copy/etc/AtomicClockRadio.ttf" % pbucket(2),
                       "%s/copy/etc/TypeRa.ttf" % pbucket(2) ])
+
+## ====== List all
+test_s3cmd("List all", ['la'],
+           must_find = [ "%s/urandom.bin" % pbucket(1)])
 
 ## ====== Simple delete
 test_s3cmd("Simple delete", ['del', '%s/xyz/etc2/Logo.PNG' % pbucket(1)],

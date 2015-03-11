@@ -12,6 +12,7 @@ import sys
 import Progress
 from SortedDict import SortedDict
 import httplib
+import locale
 try:
     import json
 except ImportError, e:
@@ -77,6 +78,8 @@ class Config(object):
     gpg_encrypt = "%(gpg_command)s -c --verbose --no-use-agent --batch --yes --passphrase-fd %(passphrase_fd)s -o %(output_file)s %(input_file)s"
     gpg_decrypt = "%(gpg_command)s -d --verbose --no-use-agent --batch --yes --passphrase-fd %(passphrase_fd)s -o %(output_file)s %(input_file)s"
     use_https = False
+    ca_certs_file = ""
+    check_ssl_certificate = True
     bucket_location = "US"
     default_mime_type = "binary/octet-stream"
     guess_mime_type = True
@@ -92,7 +95,7 @@ class Config(object):
     # Dict mapping compiled REGEXPs back to their textual form
     debug_exclude = {}
     debug_include = {}
-    encoding = "utf-8"
+    encoding = locale.getpreferredencoding() or "UTF-8"
     urlencoding_mode = "normal"
     log_target_prefix = ""
     reduced_redundancy = False
@@ -114,6 +117,8 @@ class Config(object):
     expiry_days = ""
     expiry_date = ""
     expiry_prefix = ""
+    signature_v2 = False
+    limitrate = 0
 
     ## Creating a singleton
     def __new__(self, configfile = None, access_key=None, secret_key=None):
@@ -263,6 +268,20 @@ class Config(object):
                     error("Config: verbosity level '%s' is not valid" % value)
                     return
 
+        elif option == "limitrate":
+            #convert kb,mb to bytes
+            if value.endswith("k") or value.endswith("K"):
+                shift = 10
+            elif value.endswith("m") or value.endswith("M"):
+                shift = 20
+            else:
+                shift = 0
+            try:
+                value = shift and int(value[:-1]) << shift or int(value)
+            except:
+                error("Config: value of option %s must have suffix m, k, or nothing, not '%s'" % (option, value))
+                return
+
         ## allow yes/no, true/false, on/off and 1/0 for boolean options
         elif type(getattr(Config, option)) is type(True):   # bool
             if str(value).lower() in ("true", "yes", "on", "1"):
@@ -279,6 +298,7 @@ class Config(object):
             except ValueError, e:
                 error("Config: value of option '%s' must be an integer, not '%s'" % (option, value))
                 return
+
 
         setattr(Config, option, value)
 

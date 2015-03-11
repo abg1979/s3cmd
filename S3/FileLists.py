@@ -98,7 +98,8 @@ def handle_exclude_include_walk(root, dirs, files):
         debug(u"CHECK: %r" % d)
         excluded = False
         for r in cfg.exclude:
-            if not r.pattern.endswith(u'/'): continue # we only check for directories here
+            # python versions end their patterns (from globs) differently, test for both styles.
+            if not (r.pattern.endswith(u'\\/$') or r.pattern.endswith(u'\\/\\Z(?ms)')): continue # we only check for directory patterns here
             if r.search(d):
                 excluded = True
                 debug(u"EXCL-MATCH: '%s'" % (cfg.debug_exclude[r]))
@@ -106,7 +107,8 @@ def handle_exclude_include_walk(root, dirs, files):
         if excluded:
             ## No need to check for --include if not excluded
             for r in cfg.include:
-                if not r.pattern.endswith(u'/'): continue # we only check for directories here
+                # python versions end their patterns (from globs) differently, test for both styles.
+                if not (r.pattern.endswith(u'\\/$') or r.pattern.endswith(u'\\/\\Z(?ms)')): continue # we only check for directory patterns here
                 debug(u"INCL-TEST: %s ~ %s" % (d, r.pattern))
                 if r.search(d):
                     excluded = False
@@ -321,6 +323,9 @@ def fetch_local_list(args, is_src = False, recursive = None):
 def fetch_remote_list(args, require_attribs = False, recursive = None, uri_params = {}):
     def _get_remote_attribs(uri, remote_item):
         response = S3(cfg).object_info(uri)
+        if not response.get('headers'):
+            return
+
         remote_item.update({
         'size': int(response['headers']['content-length']),
         'md5': response['headers']['etag'].strip('"\''),

@@ -117,7 +117,7 @@ class MultiPartUpload(object):
         else:
             while True:
                 buffer = self.file.read(self.chunk_size)
-                offset = self.chunk_size * (seq - 1)
+                offset = 0 # send from start of the buffer
                 current_chunk_size = len(buffer)
                 labels = {
                     'source' : unicodise(self.file.name),
@@ -130,7 +130,7 @@ class MultiPartUpload(object):
                     self.upload_part(seq, offset, current_chunk_size, labels, buffer, remote_status = remote_statuses.get(seq))
                 except:
                     error(u"\nUpload of '%s' part %d failed. Use\n  %s abortmp %s %s\nto abort, or\n  %s --upload-id %s put ...\nto continue the upload."
-                          % (self.file.name, seq, self.uri, sys.argv[0], self.upload_id, sys.argv[0], self.upload_id))
+                          % (self.file.name, seq, sys.argv[0], self.uri, self.upload_id, sys.argv[0], self.upload_id))
                     raise
                 seq += 1
 
@@ -159,7 +159,7 @@ class MultiPartUpload(object):
                 warning("MultiPart: size (%d vs %d) does not match for %s part %d, reuploading."
                         % (int(remote_status['size']), chunk_size, self.uri, seq))
 
-        headers = { "content-length": chunk_size }
+        headers = { "content-length": str(chunk_size) }
         query_string = "?partNumber=%i&uploadId=%s" % (seq, self.upload_id)
         request = self.s3.create_request("OBJECT_PUT", uri = self.uri, headers = headers, extra = query_string)
         response = self.s3.send_file(request, self.file, labels, buffer, offset = offset, chunk_size = chunk_size)
@@ -179,9 +179,9 @@ class MultiPartUpload(object):
             parts_xml.append(part_xml % (seq, etag))
         body = "<CompleteMultipartUpload>%s</CompleteMultipartUpload>" % ("".join(parts_xml))
 
-        headers = { "content-length": len(body) }
-        request = self.s3.create_request("OBJECT_POST", uri = self.uri, headers = headers, extra = "?uploadId=%s" % (self.upload_id))
-        response = self.s3.send_request(request, body = body)
+        headers = { "content-length": str(len(body)) }
+        request = self.s3.create_request("OBJECT_POST", uri = self.uri, headers = headers, extra = "?uploadId=%s" % (self.upload_id), body = body)
+        response = self.s3.send_request(request)
 
         return response
 
