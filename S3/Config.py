@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon S3 manager
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -5,7 +7,7 @@
 ## Copyright: TGRMN Software and contributors
 
 import logging
-from logging import debug, info, warning, error
+from logging import debug, warning, error
 import re
 import os
 import sys
@@ -15,7 +17,7 @@ import httplib
 import locale
 try:
     import json
-except ImportError, e:
+except ImportError:
     pass
 
 class Config(object):
@@ -32,9 +34,10 @@ class Config(object):
     verbosity = logging.WARNING
     progress_meter = True
     progress_class = Progress.ProgressCR
-    send_chunk = 4096
-    recv_chunk = 4096
+    send_chunk = 64 * 1024
+    recv_chunk = 64 * 1024
     list_md5 = False
+    long_listing = False
     human_readable_sizes = False
     extra_headers = SortedDict(ignore_case = True)
     force = False
@@ -72,12 +75,12 @@ class Config(object):
     delete_after_fetch = False
     max_delete = -1
     _doc['delete_removed'] = "[sync] Remove remote S3 objects when local file has been deleted"
-    delay_updates = False
+    delay_updates = False  # OBSOLETE
     gpg_passphrase = ""
     gpg_command = ""
     gpg_encrypt = "%(gpg_command)s -c --verbose --no-use-agent --batch --yes --passphrase-fd %(passphrase_fd)s -o %(output_file)s %(input_file)s"
     gpg_decrypt = "%(gpg_command)s -d --verbose --no-use-agent --batch --yes --passphrase-fd %(passphrase_fd)s -o %(output_file)s %(input_file)s"
-    use_https = False
+    use_https = True
     ca_certs_file = ""
     check_ssl_certificate = True
     bucket_location = "US"
@@ -113,12 +116,13 @@ class Config(object):
     cache_file = ""
     add_headers = ""
     remove_headers = []
-    ignore_failed_copy = False
     expiry_days = ""
     expiry_date = ""
     expiry_prefix = ""
     signature_v2 = False
     limitrate = 0
+    requester_pays = False
+    stop_on_error = False
 
     ## Creating a singleton
     def __new__(self, configfile = None, access_key=None, secret_key=None):
@@ -130,7 +134,7 @@ class Config(object):
         if configfile:
             try:
                 self.read_config_file(configfile)
-            except IOError, e:
+            except IOError:
                 if 'AWS_CREDENTIAL_FILE' in os.environ:
                     self.env_config()
 
@@ -260,7 +264,7 @@ class Config(object):
             # support integer verboisities
             try:
                 value = int(value)
-            except ValueError, e:
+            except ValueError:
                 try:
                     # otherwise it must be a key known to the logging module
                     value = logging._levelNames[value]
@@ -295,7 +299,7 @@ class Config(object):
         elif type(getattr(Config, option)) is type(42):     # int
             try:
                 value = int(value)
-            except ValueError, e:
+            except ValueError:
                 error("Config: value of option '%s' must be an integer, not '%s'" % (option, value))
                 return
 

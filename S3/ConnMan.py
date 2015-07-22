@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon S3 manager
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -7,9 +9,8 @@
 import sys
 import httplib
 import ssl
-from urlparse import urlparse
 from threading import Semaphore
-from logging import debug, info, warning, error
+from logging import debug
 
 from Config import Config
 from Exceptions import ParameterError

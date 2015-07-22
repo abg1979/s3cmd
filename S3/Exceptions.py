@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon S3 manager - Exceptions library
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -5,14 +7,8 @@
 ## Copyright: TGRMN Software and contributors
 
 from Utils import getTreeFromXml, unicodise, deunicodise
-from logging import debug, info, warning, error
+from logging import debug, error
 import ExitCodes
-
-try:
-    import xml.etree.ElementTree as ET
-except ImportError:
-    # xml.etree.ElementTree was only added in python 2.5
-    import elementtree.ElementTree as ET
 
 try:
     from xml.etree.ElementTree import ParseError as XmlParseError
@@ -26,7 +22,7 @@ class S3Exception(Exception):
 
     def __str__(self):
         ## Call unicode(self) instead of self.message because
-        ## __unicode__() method could be overriden in subclasses!
+        ## __unicode__() method could be overridden in subclasses!
         return deunicodise(unicode(self))
 
     def __unicode__(self):

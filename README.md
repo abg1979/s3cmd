@@ -122,11 +122,18 @@ Alternatively the ACL can be altered for existing remote files with `s3cmd setac
 
 Go to http://aws.amazon.com/s3, click the "Sign up for web service" button in the right column and work through the registration. You will have to supply your Credit Card details in order to allow Amazon charge you for S3 usage. At the end you should have your Access and Secret Keys.
 
+If you set up a separate IAM user, that user's access key must have at least the following permissions to do anything:
+-  s3:ListAllMyBuckets
+-  s3:GetBucketLocation
+-  s3:ListBucket
+
+Other example policies can be found at https://docs.aws.amazon.com/AmazonS3/latest/dev/example-policies-s3.html
+
 2) Run `s3cmd --configure`
 
 You will be asked for the two keys - copy and paste them from your confirmation email or from your Amazon account page. Be careful when copying them! They are case sensitive and must be entered accurately or you'll keep getting errors about invalid signatures or similar.
 
-Remember to add ListAllMyBuckets permissions to the keys or you will get an AccessDenied error while testing access.
+Remember to add s3:ListAllMyBuckets permissions to the keys or you will get an AccessDenied error while testing access.
 
 3) Run `s3cmd ls` to list all your buckets.
 
@@ -268,15 +275,15 @@ part is empty and s3cmd will only create 'dir1' and 'dir2'
 without the 'somewhere/' prefix:
 
 ```
-$ s3cmd get --recursive s3://public.s3tools.org/somewhere /tmp
+$ s3cmd get --recursive s3://public.s3tools.org/somewhere/ ~/
 
-File s3://public.s3tools.org/somewhere/dir1/file1-1.txt saved as '/tmp/dir1/file1-1.txt'
-File s3://public.s3tools.org/somewhere/dir1/file1-2.txt saved as '/tmp/dir1/file1-2.txt'
-File s3://public.s3tools.org/somewhere/dir1/file1-3.log saved as '/tmp/dir1/file1-3.log'
-File s3://public.s3tools.org/somewhere/dir2/file2-1.bin saved as '/tmp/dir2/file2-1.bin'
+File s3://public.s3tools.org/somewhere/dir1/file1-1.txt saved as '~/dir1/file1-1.txt'
+File s3://public.s3tools.org/somewhere/dir1/file1-2.txt saved as '~/dir1/file1-2.txt'
+File s3://public.s3tools.org/somewhere/dir1/file1-3.log saved as '~/dir1/file1-3.log'
+File s3://public.s3tools.org/somewhere/dir2/file2-1.bin saved as '~/dir2/file2-1.bin'
 ```
 
-See? It's `/tmp/dir1` and not `/tmp/somewhere/dir1` as it was in the previous example.
+See? It's `~/dir1` and not `~/somewhere/dir1` as it was in the previous example.
 
 10) Clean up - delete the remote files and remove the bucket:
 
@@ -315,6 +322,8 @@ The basic usage is as simple as described in the previous section.
 You can increase the level of verbosity with `-v` option and if you're really keen to know what the program does under its bonnet run it with `-d` to see all 'debugging' output.
 
 After configuring it with `--configure` all available options are spitted into your `~/.s3cfg` file. It's a text file ready to be modified in your favourite text editor.
+
+The Transfer commands (put, get, cp, mv, and sync) continue transferring even if an object fails. If a failure occurs the failure is output to stderr and the exit status will be EX_PARTIAL (2). If the option `--stop-on-error` is specified, or the config option stop_on_error is true, the transfers stop and an appropriate error code is returned.
 
 For more information refer to the [S3cmd / S3tools homepage](http://s3tools.org).
 
