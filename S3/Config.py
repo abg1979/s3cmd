@@ -151,9 +151,9 @@ class Config(object):
                     self.access_key = env_access_key
                     self.secret_key = env_secret_key
                     self.access_token = env_access_token
-                    debug("Using environment access token [%s], secret key [%s] and session token [%s]." % (env_access_key, env_secret_key, env_access_token) )
                 else:
                     self.role_config()
+        debug("Using environment access token [%s], secret key [%s] and session token [%s]." % (self.access_key, self.secret_key, self.access_token))
 
     def role_config(self):
         if sys.version_info[0] * 10 + sys.version_info[1] < 26:
