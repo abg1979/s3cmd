@@ -62,7 +62,10 @@ def parseNodes(nodes):
                 retval_item[name] = parseNodes([child])
             else:
                 found_text = node.findtext(".//%s" % child.tag)
-                retval_item[name] = decode_from_s3(found_text) if found_text is not None else None
+                if found_text is not None:
+                    retval_item[name] = decode_from_s3(found_text)
+                else:
+                    retval_item[name] = None
         retval.append(retval_item)
     return retval
 __all__.append("parseNodes")
@@ -263,10 +266,10 @@ def mkdir_with_parents(dir_name):
             debug("mkdir(%s)" % cur_dir)
             os.mkdir(deunicodise(cur_dir))
         except (OSError, IOError), e:
-            warning("%s: can not make directory: %s" % (cur_dir, e.strerror))
+            debug("Can not make directory '%s' (Reason: %s)" % (cur_dir, e.strerror))
             return False
         except Exception, e:
-            warning("%s: %s" % (cur_dir, e))
+            debug("Can not make directory '%s' (Reason: %s)" % (cur_dir, e))
             return False
     return True
 __all__.append("mkdir_with_parents")

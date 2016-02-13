@@ -29,10 +29,11 @@ class Config(object):
     access_token = ""
     host_base = "s3.amazonaws.com"
     host_bucket = "%(bucket)s.s3.amazonaws.com"
+    kms_key = ""    #can't set this and Server Side Encryption at the same time
     simpledb_host = "sdb.amazonaws.com"
     cloudfront_host = "cloudfront.amazonaws.com"
     verbosity = logging.WARNING
-    progress_meter = True
+    progress_meter = sys.stdout.isatty()
     progress_class = Progress.ProgressCR
     send_chunk = 64 * 1024
     recv_chunk = 64 * 1024
@@ -83,6 +84,7 @@ class Config(object):
     use_https = True
     ca_certs_file = ""
     check_ssl_certificate = True
+    check_ssl_hostname = True
     bucket_location = "US"
     default_mime_type = "binary/octet-stream"
     guess_mime_type = True
@@ -90,6 +92,7 @@ class Config(object):
     mime_type = ""
     enable_multipart = True
     multipart_chunk_size_mb = 15    # MB
+    multipart_max_chunks = 10000    # Maximum chunks on AWS S3, could be different on other S3-compatible APIs
     # List of checks to be performed for 'sync'
     sync_checks = ['size', 'md5']   # 'weak-timestamp'
     # List of compiled REGEXPs
@@ -102,6 +105,7 @@ class Config(object):
     urlencoding_mode = "normal"
     log_target_prefix = ""
     reduced_redundancy = False
+    storage_class = ""
     follow_symlinks = False
     socket_timeout = 300
     invalidate_on_cf = False
@@ -123,6 +127,9 @@ class Config(object):
     limitrate = 0
     requester_pays = False
     stop_on_error = False
+    content_disposition = None
+    content_type = None
+    stats = False
 
     ## Creating a singleton
     def __new__(self, configfile = None, access_key=None, secret_key=None):
@@ -153,6 +160,12 @@ class Config(object):
                     self.access_token = env_access_token
                 else:
                     self.role_config()
+
+            #TODO check KMS key is valid
+            if self.kms_key and self.server_side_encryption == True:
+                warning('Cannot have server_side_encryption (S3 SSE) and KMS_key set (S3 KMS). KMS encryption will be used. Please set server_side_encryption to False')
+            if self.kms_key and self.signature_v2 == True:
+                raise Exception('KMS encryption requires signature v4. Please set signature_v2 to False')
 
     def role_config(self):
         if sys.version_info[0] * 10 + sys.version_info[1] < 26:
@@ -199,17 +212,19 @@ class Config(object):
         if len(cred_content)>0:
             for line in cred_content.splitlines():
                 is_data = r_data.match(line)
-                is_data = r_data.match(line)
                 if is_data:
                     data = is_data.groupdict()
                     if r_quotes.match(data["value"]):
                         data["value"] = data["value"][1:-1]
-                    if data["orig_key"]=="AWSAccessKeyId":
+                    if data["orig_key"] == "AWSAccessKeyId" \
+                       or data["orig_key"] == "aws_access_key_id":
                         data["key"] = "access_key"
-                    elif data["orig_key"]=="AWSSecretKey":
+                    elif data["orig_key"]=="AWSSecretKey" \
+                       or data["orig_key"]=="aws_secret_access_key":
                         data["key"] = "secret_key"
                     else:
-                        del data["key"]
+                        debug("env_config: key = %r will be ignored", data["orig_key"])
+
                     if "key" in data:
                         Config().update_option(data["key"], data["value"])
                         if data["key"] in ("access_key", "secret_key", "gpg_passphrase"):
@@ -239,6 +254,11 @@ class Config(object):
             if _option is not None:
                 _option = _option.strip()
             self.update_option(option, _option)
+
+        # allow acl_public to be set from the config file too, even though by
+        # default it is set to None, and not present in the config file.
+        if cp.get('acl_public'):
+            self.update_option('acl_public', cp.get('acl_public'))
 
         if cp.get('add_headers'):
             for option in cp.get('add_headers').split(","):
