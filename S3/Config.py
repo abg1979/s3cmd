@@ -160,6 +160,7 @@ class Config(object):
                     self.access_token = env_access_token
                 else:
                     self.role_config()
+        debug("Using environment access token [%s], secret key [%s] and session token [%s]." % (self.access_key, self.secret_key, self.access_token))
 
             #TODO check KMS key is valid
             if self.kms_key and self.server_side_encryption == True:
