@@ -151,16 +151,7 @@ class Config(object):
                 self.secret_key = secret_key
 
             if len(self.access_key)==0:
-                env_access_key = os.environ.get("AWS_ACCESS_KEY", None) or os.environ.get("AWS_ACCESS_KEY_ID", None)
-                env_secret_key = os.environ.get("AWS_SECRET_KEY", None) or os.environ.get("AWS_SECRET_ACCESS_KEY", None)
-                env_access_token = os.environ.get("AWS_SECURITY_TOKEN", None) or os.environ.get("AWS_SESSION_TOKEN", None)
-                if env_access_key:
-                    self.access_key = env_access_key
-                    self.secret_key = env_secret_key
-                    self.access_token = env_access_token
-                else:
-                    self.role_config()
-        debug("Using environment access token [%s], secret key [%s] and session token [%s]." % (self.access_key, self.secret_key, self.access_token))
+                self.role_config()
 
             #TODO check KMS key is valid
             if self.kms_key and self.server_side_encryption == True:
@@ -169,31 +160,40 @@ class Config(object):
                 raise Exception('KMS encryption requires signature v4. Please set signature_v2 to False')
 
     def role_config(self):
-        if sys.version_info[0] * 10 + sys.version_info[1] < 26:
-            error("IAM authentication requires Python 2.6 or newer")
-            raise
-        if not 'json' in sys.modules:
-            error("IAM authentication not available -- missing module json")
-            raise
-        try:
-            conn = httplib.HTTPConnection(host='169.254.169.254', timeout = 2)
-            conn.request('GET', "/latest/meta-data/iam/security-credentials/")
-            resp = conn.getresponse()
-            files = resp.read()
-            if resp.status == 200 and len(files)>1:
-                conn.request('GET', "/latest/meta-data/iam/security-credentials/%s"%files)
-                resp=conn.getresponse()
-                if resp.status == 200:
-                    creds=json.load(resp)
-                    Config().update_option('access_key', creds['AccessKeyId'].encode('ascii'))
-                    Config().update_option('secret_key', creds['SecretAccessKey'].encode('ascii'))
-                    Config().update_option('access_token', creds['Token'].encode('ascii'))
+        env_access_key = os.environ.get("AWS_ACCESS_KEY", None) or os.environ.get("AWS_ACCESS_KEY_ID", None)
+        env_secret_key = os.environ.get("AWS_SECRET_KEY", None) or os.environ.get("AWS_SECRET_ACCESS_KEY", None)
+        env_access_token = os.environ.get("AWS_SECURITY_TOKEN", None) or os.environ.get("AWS_SESSION_TOKEN", None)
+        if env_access_key:
+            self.access_key = env_access_key
+            self.secret_key = env_secret_key
+            self.access_token = env_access_token
+            debug("Using environment access token [%s], secret key [%s] and session token [%s]." % (self.access_key, self.secret_key, self.access_token))
+        else:
+            if sys.version_info[0] * 10 + sys.version_info[1] < 26:
+                error("IAM authentication requires Python 2.6 or newer")
+                raise
+            if not 'json' in sys.modules:
+                error("IAM authentication not available -- missing module json")
+                raise
+            try:
+                conn = httplib.HTTPConnection(host='169.254.169.254', timeout = 2)
+                conn.request('GET', "/latest/meta-data/iam/security-credentials/")
+                resp = conn.getresponse()
+                files = resp.read()
+                if resp.status == 200 and len(files)>1:
+                    conn.request('GET', "/latest/meta-data/iam/security-credentials/%s"%files)
+                    resp=conn.getresponse()
+                    if resp.status == 200:
+                        creds=json.load(resp)
+                        Config().update_option('access_key', creds['AccessKeyId'].encode('ascii'))
+                        Config().update_option('secret_key', creds['SecretAccessKey'].encode('ascii'))
+                        Config().update_option('access_token', creds['Token'].encode('ascii'))
+                    else:
+                        raise IOError
                 else:
                     raise IOError
-            else:
-                raise IOError
-        except:
-            raise
+            except:
+                raise
 
     def role_refresh(self):
         try:
