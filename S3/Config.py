@@ -164,9 +164,9 @@ class Config(object):
         env_secret_key = os.environ.get("AWS_SECRET_KEY", None) or os.environ.get("AWS_SECRET_ACCESS_KEY", None)
         env_access_token = os.environ.get("AWS_SECURITY_TOKEN", None) or os.environ.get("AWS_SESSION_TOKEN", None)
         if env_access_key:
-            self.access_key = env_access_key
-            self.secret_key = env_secret_key
-            self.access_token = env_access_token
+            Config().update_option('access_key', env_access_key.encode('ascii'))
+            Config().update_option('secret_key', env_secret_key.encode('ascii'))
+            Config().update_option('access_token', env_access_token.encode('ascii'))
             debug("Using environment access token [%s], secret key [%s] and session token [%s]." % (self.access_key, self.secret_key, self.access_token))
         else:
             if sys.version_info[0] * 10 + sys.version_info[1] < 26:
