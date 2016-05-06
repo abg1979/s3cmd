@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon S3 manager - Exceptions library
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -5,13 +7,14 @@
 ## Copyright: TGRMN Software and contributors
 
 from Utils import getTreeFromXml, unicodise, deunicodise
-from logging import debug, info, warning, error
+from logging import debug, error
 import ExitCodes
 
 try:
-    import xml.etree.ElementTree as ET
+    from xml.etree.ElementTree import ParseError as XmlParseError
 except ImportError:
-    import elementtree.ElementTree as ET
+    # ParseError was only added in python2.7, before ET was raising ExpatError
+    from xml.parsers.expat import ExpatError as XmlParseError
 
 class S3Exception(Exception):
     def __init__(self, message = ""):
@@ -19,7 +22,7 @@ class S3Exception(Exception):
 
     def __str__(self):
         ## Call unicode(self) instead of self.message because
-        ## __unicode__() method could be overriden in subclasses!
+        ## __unicode__() method could be overridden in subclasses!
         return deunicodise(unicode(self))
 
     def __unicode__(self):
@@ -49,10 +52,13 @@ class S3Error (S3Exception):
         if response.has_key("data") and response["data"]:
             try:
                 tree = getTreeFromXml(response["data"])
-            except ET.ParseError:
+            except XmlParseError:
                 debug("Not an XML response")
             else:
-                self.info.update(self.parse_error_xml(tree))
+                try:
+                    self.info.update(self.parse_error_xml(tree))
+                except Exception, e:
+                    error("Error parsing xml: %s.  ErrorXML: %s" % (e, response["data"]))
 
         self.code = self.info["Code"]
         self.message = self.info["Message"]
@@ -61,14 +67,15 @@ class S3Error (S3Exception):
     def __unicode__(self):
         retval = u"%d " % (self.status)
         retval += (u"(%s)" % (self.info.has_key("Code") and self.info["Code"] or self.reason))
-        if self.info.has_key("Message"):
-            retval += (u": %s" % self.info["Message"])
+        error_msg = self.info.get("Message")
+        if error_msg:
+            retval += (u": %s" % error_msg)
         return retval
 
     def get_error_code(self):
         if self.status in [301, 307]:
             return ExitCodes.EX_SERVERMOVED
-        elif self.status in [400, 405, 411, 416, 501]:
+        elif self.status in [400, 405, 411, 416, 501, 504]:
             return ExitCodes.EX_SERVERERROR
         elif self.status == 403:
             return ExitCodes.EX_ACCESSDENIED
@@ -91,11 +98,13 @@ class S3Error (S3Exception):
         error_node = tree
         if not error_node.tag == "Error":
             error_node = tree.find(".//Error")
-        for child in error_node.getchildren():
-            if child.text != "":
-                debug("ErrorXML: " + child.tag + ": " + repr(child.text))
-                info[child.tag] = child.text
-
+        if error_node is not None:
+            for child in error_node.getchildren():
+                if child.text != "":
+                    debug("ErrorXML: " + child.tag + ": " + repr(child.text))
+                    info[child.tag] = child.text
+        else:
+            raise S3ResponseError("Malformed error XML returned from remote server.")
         return info
 
 

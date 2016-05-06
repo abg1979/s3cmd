@@ -5,17 +5,14 @@
 
 Name:           s3cmd
 Version:        ##VERSION##
-Release:        0.4.git%{shortcommit}%{?dist}
+Release:        1%{dist}
 Summary:        Tool for accessing Amazon Simple Storage Service
 
 Group:          Applications/Internet
 License:        GPLv2
-URL:            http://s3tools.logix.cz/s3cmd
-# git clone  git@github.com:mdomsch/s3cmd.git
-# git checkout -b origin/merge
-#git archive --format tar --prefix s3cmd-1.1.0-beta3-2dfe4a65/ HEAD | gzip -c > s3cmd-1.1.0-beta1-2dfe4a65.tar.gz
-# or use python setup.py sdist
-
+URL:            http://s3tools.com
+# git clone https://github.com/s3tools/s3cmd
+# python setup.py sdist
 Source0:        https://github.com/s3tools/s3cmd/archive/%{commit}/%{name}-%{version}-%{shortcommit}.tar.gz
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 BuildArch:      noarch
@@ -31,7 +28,9 @@ BuildRequires:  python-elementtree
 Requires:       python-elementtree
 %endif
 BuildRequires:  python-dateutil
+BuildRequires:  python-setuptools
 Requires:       python-dateutil
+Requires:       python-magic
 
 %description
 S3cmd lets you copy files from/to Amazon S3
@@ -64,10 +63,23 @@ rm -rf $RPM_BUILD_ROOT
 %if 0%{?fedora} >= 9 || 0%{?rhel} >= 6
 %{python_sitelib}/s3cmd*.egg-info
 %endif
-%doc NEWS README
+%doc NEWS README.md
 
 
 %changelog
+* Thu Feb  5 2015 Matt Domsch <mdomsch@fedoraproject.org> - 1.5.1.2-5
+- add Requires: python-magic
+
+* Wed Feb  4 2015 Matt Domsch <mdomsch@fedoraproject.org> - 1.5.1.2-4
+- upstream 1.5.1.2, mostly bug fixes
+- add dependency on python-setuptools
+
+ Mon Jan 12 2015 Matt Domsch <mdomsch@fedoraproject.org> - 1.5.0-1
+- upstream 1.5.0 final
+
+* Tue Jul  1 2014 Matt Domsch <mdomsch@fedoraproject.org> - 1.5.0-0.6.rc1
+- upstream 1.5.0-rc1
+
 * Sun Mar 23 2014 Matt Domsch <mdomsch@fedoraproject.org> - 1.5.0-0.4.git
 - upstream 1.5.0-beta1 plus even newer upstream fixes
 

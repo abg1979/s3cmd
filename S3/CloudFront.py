@@ -1,3 +1,5 @@
+# -*- coding: utf-8 -*-
+
 ## Amazon CloudFront support
 ## Author: Michal Ludvig <michal@logix.cz>
 ##         http://www.logix.cz/michal
@@ -6,7 +8,6 @@
 
 import sys
 import time
-import httplib
 import random
 from datetime import datetime
 from logging import debug, info, warning, error
@@ -19,9 +20,10 @@ except ImportError:
 from S3 import S3
 from Config import Config
 from Exceptions import *
-from Utils import getTreeFromXml, appendXmlTextNode, getDictFromTree, dateS3toPython, sign_string, getBucketFromHostname, getHostnameFromBucket
+from Utils import getTreeFromXml, appendXmlTextNode, getDictFromTree, dateS3toPython, getBucketFromHostname, getHostnameFromBucket, deunicodise
+from Crypto import sign_string_v2
 from S3Uri import S3Uri, S3UriS3
-from FileLists import fetch_remote_list
+from ConnMan import ConnMan
 
 cloudfront_api_version = "2010-11-01"
 cloudfront_resource = "/%(api_ver)s/distribution" % { 'api_ver' : cloudfront_api_version }
@@ -63,7 +65,7 @@ class DistributionSummary(object):
             self.info['CNAME'] = [self.info['CNAME']]
 
     def uri(self):
-        return S3Uri("cf://%s" % self.info['Id'])
+        return S3Uri(u"cf://%s" % self.info['Id'])
 
 class DistributionList(object):
     ## Example:
@@ -119,7 +121,7 @@ class Distribution(object):
         self.info['DistributionConfig'] = DistributionConfig(tree = tree.find(".//DistributionConfig"))
 
     def uri(self):
-        return S3Uri("cf://%s" % self.info['Id'])
+        return S3Uri(u"cf://%s" % self.info['Id'])
 
 class DistributionConfig(object):
     ## Example:
@@ -167,7 +169,7 @@ class DistributionConfig(object):
             logging_dict['Bucket'], success = getBucketFromHostname(logging_dict['Bucket'])
             if not success:
                 warning("Logging to unparsable bucket name: %s" % logging_dict['Bucket'])
-            self.info['Logging'] = S3UriS3("s3://%(Bucket)s/%(Prefix)s" % logging_dict)
+            self.info['Logging'] = S3UriS3(u"s3://%(Bucket)s/%(Prefix)s" % logging_dict)
         else:
             self.info['Logging'] = None
 
@@ -445,28 +447,34 @@ class CloudFront(object):
             paths = new_paths
 
         # uri could be either cf:// or s3:// uri
-        cfuri = self.get_dist_name_for_bucket(uri)
+        cfuris = self.get_dist_name_for_bucket(uri)
         if len(paths) > 999:
             try:
                 tmp_filename = Utils.mktmpfile()
-                f = open(tmp_filename, "w")
-                f.write("\n".join(paths)+"\n")
+                f = open(deunicodise(tmp_filename), "w")
+                f.write(deunicodise("\n".join(paths)+"\n"))
                 f.close()
                 warning("Request to invalidate %d paths (max 999 supported)" % len(paths))
                 warning("All the paths are now saved in: %s" % tmp_filename)
             except:
                 pass
             raise ParameterError("Too many paths to invalidate")
-        invalbatch = InvalidationBatch(distribution = cfuri.dist_id(), paths = paths)
-        debug("InvalidateObjects(): request_body: %s" % invalbatch)
-        response = self.send_request("Invalidate", dist_id = cfuri.dist_id(),
-                                     body = str(invalbatch))
-        response['dist_id'] = cfuri.dist_id()
-        if response['status'] == 201:
-            inval_info = Invalidation(response['data']).info
-            response['request_id'] = inval_info['Id']
-        debug("InvalidateObjects(): response: %s" % response)
-        return response
+
+        responses = []
+        for cfuri in cfuris:
+            invalbatch = InvalidationBatch(distribution = cfuri.dist_id(), paths = paths)
+            debug("InvalidateObjects(): request_body: %s" % invalbatch)
+            response = self.send_request("Invalidate", dist_id = cfuri.dist_id(),
+                                         body = str(invalbatch))
+            response['dist_id'] = cfuri.dist_id()
+            if response['status'] == 201:
+                inval_info = Invalidation(response['data']).info
+                response['request_id'] = inval_info['Id']
+            debug("InvalidateObjects(): response: %s" % response)
+
+            responses.append(response)
+
+        return responses
 
     def GetInvalList(self, cfuri):
         if cfuri.type != "cf":
@@ -495,14 +503,14 @@ class CloudFront(object):
         request = self.create_request(operation, dist_id, request_id, headers)
         conn = self.get_connection()
         debug("send_request(): %s %s" % (request['method'], request['resource']))
-        conn.request(request['method'], request['resource'], body, request['headers'])
-        http_response = conn.getresponse()
+        conn.c.request(request['method'], request['resource'], body, request['headers'])
+        http_response = conn.c.getresponse()
         response = {}
         response["status"] = http_response.status
         response["reason"] = http_response.reason
         response["headers"] = dict(http_response.getheaders())
         response["data"] =  http_response.read()
-        conn.close()
+        ConnMan.put(conn)
 
         debug("CloudFront: response: %r" % response)
 
@@ -553,14 +561,13 @@ class CloudFront(object):
 
     def sign_request(self, headers):
         string_to_sign = headers['x-amz-date']
-        signature = sign_string(string_to_sign)
+        signature = sign_string_v2(string_to_sign)
         debug(u"CloudFront.sign_request('%s') = %s" % (string_to_sign, signature))
         return signature
 
     def get_connection(self):
-        if self.config.proxy_host != "":
-            raise ParameterError("CloudFront commands don't work from behind a HTTP proxy")
-        return httplib.HTTPSConnection(self.config.cloudfront_host)
+        conn = ConnMan.get(self.config.cloudfront_host, ssl = True)
+        return conn
 
     def _fail_wait(self, retries):
         # Wait a few seconds. The more it fails the more we wait.
@@ -577,8 +584,10 @@ class CloudFront(object):
             response = self.GetList()
             CloudFront.dist_list = {}
             for d in response['dist_list'].dist_summs:
+                distListIndex = ""
+
                 if d.info.has_key("S3Origin"):
-                    CloudFront.dist_list[getBucketFromHostname(d.info['S3Origin']['DNSName'])[0]] = d.uri()
+                    distListIndex = getBucketFromHostname(d.info['S3Origin']['DNSName'])[0]
                 elif d.info.has_key("CustomOrigin"):
                     # Aral: This used to skip over distributions with CustomOrigin, however, we mustn't
                     #       do this since S3 buckets that are set up as websites use custom origins.
@@ -586,10 +595,15 @@ class CloudFront(object):
                     #       S3 bucket. Here, we make use this naming convention to support this use case.
                     distListIndex = getBucketFromHostname(d.info['CustomOrigin']['DNSName'])[0];
                     distListIndex = distListIndex[:len(uri.bucket())]
-                    CloudFront.dist_list[distListIndex] = d.uri()
                 else:
                     # Aral: I'm not sure when this condition will be reached, but keeping it in there.
                     continue
+
+                if CloudFront.dist_list.get(distListIndex, None) is None:
+                    CloudFront.dist_list[distListIndex] = set() 
+
+                CloudFront.dist_list[distListIndex].add(d.uri())
+
             debug("dist_list: %s" % CloudFront.dist_list)
         try:
             return CloudFront.dist_list[uri.bucket()]
@@ -623,8 +637,8 @@ class Cmd(object):
         cf = CloudFront(Config())
         cfuris = []
         for arg in args:
-            uri = cf.get_dist_name_for_bucket(S3Uri(arg))
-            cfuris.append(uri)
+            uris = cf.get_dist_name_for_bucket(S3Uri(arg))
+            cfuris.extend(uris)
         return cfuris
 
     @staticmethod
@@ -722,7 +736,7 @@ class Cmd(object):
             raise ParameterError("Too many parameters. Modify one Distribution at a time.")
         try:
             cfuri = Cmd._parse_args(args)[0]
-        except IndexError, e:
+        except IndexError:
             raise ParameterError("No valid Distribution URI found.")
         response = cf.ModifyDistribution(cfuri,
                                          cnames_add = Cmd.options.cf_cnames_add,
